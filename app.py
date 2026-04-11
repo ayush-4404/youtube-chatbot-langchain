@@ -76,6 +76,7 @@ def answer_question(retriever, question: str) -> str:
 st.set_page_config(page_title="YouTube Chatbot", page_icon="🎬", layout="centered")
 st.title("YouTube Video Q&A")
 st.caption("Ask questions about a YouTube video's transcript using Gemini + LangChain")
+st.caption("If YouTube blocks transcript requests on cloud IPs, you can paste a transcript manually below.")
 
 if "retriever" not in st.session_state:
     st.session_state.retriever = None
@@ -97,7 +98,38 @@ if st.button("Load Video", use_container_width=True):
     except (TranscriptsDisabled, NoTranscriptFound):
         st.error("No English transcript found for this video.")
     except Exception as exc:
-        st.error(f"Failed to load video: {exc}")
+        error_text = str(exc)
+        if (
+            "YouTube is blocking requests from your IP" in error_text
+            or "RequestBlocked" in error_text
+            or "IpBlocked" in error_text
+        ):
+            st.error("Transcript request was blocked by YouTube from this IP.")
+            st.info(
+                "Workarounds: run locally on a residential IP, wait and retry later, or paste a transcript manually below."
+            )
+        else:
+            st.error(f"Failed to load video: {exc}")
+
+st.markdown("---")
+manual_transcript = st.text_area(
+    "Or paste transcript manually",
+    placeholder="Paste the video transcript text here, then click 'Use Pasted Transcript'.",
+    height=180,
+)
+
+if st.button("Use Pasted Transcript", use_container_width=True):
+    if not manual_transcript.strip():
+        st.warning("Paste transcript text first.")
+    else:
+        try:
+            with st.spinner("Building vector store from pasted transcript..."):
+                retriever, chunk_count = build_retriever(manual_transcript)
+            st.session_state.retriever = retriever
+            st.session_state.active_video_id = "manual-transcript"
+            st.success(f"Transcript loaded. Created {chunk_count} chunks.")
+        except Exception as exc:
+            st.error(f"Failed to use pasted transcript: {exc}")
 
 question = st.text_input("Question", placeholder="What is this video mainly about?")
 
