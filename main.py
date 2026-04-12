@@ -10,10 +10,16 @@ load_dotenv()
 
 llm = ChatGoogleGenerativeAI(model="models/gemini-2.5-flash", temperature=0.2)
 
-video_id = "ty9ZcimL6VE" 
+PREFERRED_TRANSCRIPT_LANGUAGES = ["hi", "hi-IN", "en"]
+
+# video_id = "ty9ZcimL6VE" 
 # video_id = "Gfr50f6ZBvo"
+video_id = "LhpZJwUboeI"
 try:
-    transcript_list = YouTubeTranscriptApi().fetch(video_id, languages=["en"])
+    transcript_list = YouTubeTranscriptApi().fetch(
+        video_id,
+        languages=PREFERRED_TRANSCRIPT_LANGUAGES,
+    )
 
     transcript = " ".join(chunk.text for chunk in transcript_list)
     # print(transcript)
@@ -77,5 +83,5 @@ parser = StrOutputParser()
 
 main_chain = parallel_chain | prompt | llm | parser
 
-answer = main_chain.invoke("Can you summarise the video")
+answer = main_chain.invoke("tell me if he talked about amitabh bachan in the episode and fetch all that he talked about")
 print(answer)

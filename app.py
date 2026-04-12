@@ -19,6 +19,8 @@ If the context is insufficient, just say you don't know.
 Question: {question}
 """.strip()
 
+PREFERRED_TRANSCRIPT_LANGUAGES = ["hi", "hi-IN", "en"]
+
 
 def extract_video_id(url_or_id: str) -> str:
     value = url_or_id.strip()
@@ -47,7 +49,10 @@ def extract_video_id(url_or_id: str) -> str:
 
 
 def fetch_transcript_text(video_id: str) -> str:
-    transcript_list = YouTubeTranscriptApi().fetch(video_id, languages=["en"])
+    transcript_list = YouTubeTranscriptApi().fetch(
+        video_id,
+        languages=PREFERRED_TRANSCRIPT_LANGUAGES,
+    )
     return " ".join(chunk.text for chunk in transcript_list)
 
 
@@ -96,7 +101,7 @@ if st.button("Load Video", use_container_width=True):
         st.session_state.active_video_id = video_id
         st.success(f"Video loaded. Created {chunk_count} chunks.")
     except (TranscriptsDisabled, NoTranscriptFound):
-        st.error("No English transcript found for this video.")
+        st.error("No Hindi or English transcript found for this video.")
     except Exception as exc:
         error_text = str(exc)
         if (
