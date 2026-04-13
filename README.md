@@ -9,6 +9,7 @@ A Streamlit app that lets you ask questions about a YouTube video by building a 
 - Create embeddings with Gemini embeddings.
 - Store vectors in FAISS and retrieve relevant context.
 - Answer questions with Gemini chat model.
+- Conversational chat UI with session chat history as context.
 - Fallback support: paste transcript manually if YouTube blocks transcript requests.
 
 ## Project Structure
@@ -127,7 +128,6 @@ Verify GOOGLE_API_KEY is valid and has access to:
 ## Future Improvements
 
 - Automatic fallback to audio transcription when transcript fetch fails.
-- Chat history memory per session.
 - Source snippet citations in answers.
 - Multi-language transcript support.
 

@@ -15,8 +15,12 @@ You are a helpful assistant.
 Answer ONLY from the provided transcript context.
 If the context is insufficient, just say you don't know.
 
+Conversation history:
+{history}
+
+Transcript context:
 {context}
-Question: {question}
+Current user question: {question}
 """.strip()
 
 PREFERRED_TRANSCRIPT_LANGUAGES = ["hi", "hi-IN", "en"]
@@ -67,11 +71,28 @@ def build_retriever(transcript: str):
     return retriever, len(chunks)
 
 
-def answer_question(retriever, question: str) -> str:
+def format_history(messages, max_turns: int = 8) -> str:
+    if not messages:
+        return "No previous conversation."
+
+    # Keep only recent turns so prompts stay focused and token usage remains stable.
+    recent_messages = messages[-(max_turns * 2) :]
+    lines = []
+    for message in recent_messages:
+        role = "User" if message.get("role") == "user" else "Assistant"
+        content = str(message.get("content", "")).strip()
+        if content:
+            lines.append(f"{role}: {content}")
+
+    return "\n".join(lines) if lines else "No previous conversation."
+
+
+def answer_question(retriever, question: str, history_messages) -> str:
     docs = retriever.invoke(question)
     context = "\n\n".join(doc.page_content for doc in docs)
+    history = format_history(history_messages)
 
-    prompt = PROMPT_TEMPLATE.format(context=context, question=question)
+    prompt = PROMPT_TEMPLATE.format(history=history, context=context, question=question)
     llm = ChatGoogleGenerativeAI(model="models/gemini-2.5-flash", temperature=0.2)
     response = llm.invoke(prompt)
 
@@ -87,6 +108,8 @@ if "retriever" not in st.session_state:
     st.session_state.retriever = None
 if "active_video_id" not in st.session_state:
     st.session_state.active_video_id = ""
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
 video_input = st.text_input("YouTube URL or video id", placeholder="https://www.youtube.com/watch?v=...")
 
@@ -99,6 +122,7 @@ if st.button("Load Video", use_container_width=True):
 
         st.session_state.retriever = retriever
         st.session_state.active_video_id = video_id
+        st.session_state.chat_history = []
         st.success(f"Video loaded. Created {chunk_count} chunks.")
     except (TranscriptsDisabled, NoTranscriptFound):
         st.error("No Hindi or English transcript found for this video.")
@@ -132,23 +156,36 @@ if st.button("Use Pasted Transcript", use_container_width=True):
                 retriever, chunk_count = build_retriever(manual_transcript)
             st.session_state.retriever = retriever
             st.session_state.active_video_id = "manual-transcript"
+            st.session_state.chat_history = []
             st.success(f"Transcript loaded. Created {chunk_count} chunks.")
         except Exception as exc:
             st.error(f"Failed to use pasted transcript: {exc}")
 
-question = st.text_input("Question", placeholder="What is this video mainly about?")
+st.markdown("### Chat")
+if st.session_state.chat_history and st.button("Clear Chat History"):
+    st.session_state.chat_history = []
 
-if st.button("Ask", use_container_width=True):
+for message in st.session_state.chat_history:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+user_input = st.chat_input("Ask about the loaded video transcript...")
+
+if user_input:
     if not st.session_state.retriever:
         st.warning("Load a video first.")
-    elif not question.strip():
-        st.warning("Enter a question.")
     else:
+        prior_history = list(st.session_state.chat_history)
+        st.session_state.chat_history.append({"role": "user", "content": user_input})
+        with st.chat_message("user"):
+            st.markdown(user_input)
+
         try:
-            with st.spinner("Thinking..."):
-                answer = answer_question(st.session_state.retriever, question)
-            st.markdown("### Answer")
-            st.write(answer)
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    answer = answer_question(st.session_state.retriever, user_input, prior_history)
+                st.markdown(answer)
+            st.session_state.chat_history.append({"role": "assistant", "content": answer})
         except Exception as exc:
             st.error(f"Failed to generate answer: {exc}")
 
