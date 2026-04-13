@@ -10,6 +10,7 @@ A Streamlit app that lets you ask questions about a YouTube video by building a 
 - Store vectors in FAISS and retrieve relevant context.
 - Answer questions with Gemini chat model.
 - Conversational chat UI with session chat history as context.
+- Automatic subtitle fallback using yt-dlp when transcript API is blocked.
 - Fallback support: paste transcript manually if YouTube blocks transcript requests.
 
 ## Project Structure
@@ -96,6 +97,7 @@ Some cloud IP addresses are blocked by YouTube transcript endpoints. This can af
 
 Recommended options:
 
+- The app now automatically tries a yt-dlp subtitle fallback first.
 - Run locally on a residential IP.
 - Use the built-in manual transcript fallback.
 - Add a transcription fallback pipeline (for example, ASR) if needed.

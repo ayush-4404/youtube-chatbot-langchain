@@ -1,4 +1,7 @@
 from urllib.parse import parse_qs, urlparse
+import json
+import os
+import tempfile
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -6,6 +9,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from youtube_transcript_api import NoTranscriptFound, TranscriptsDisabled, YouTubeTranscriptApi
+import yt_dlp
 
 load_dotenv()
 
@@ -58,6 +62,49 @@ def fetch_transcript_text(video_id: str) -> str:
         languages=PREFERRED_TRANSCRIPT_LANGUAGES,
     )
     return " ".join(chunk.text for chunk in transcript_list)
+
+
+def fetch_transcript_text_ytdlp(video_id: str) -> str:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        ydl_opts = {
+            "skip_download": True,
+            "writesubtitles": True,
+            "writeautomaticsub": True,
+            "subtitleslangs": PREFERRED_TRANSCRIPT_LANGUAGES,
+            "subtitlesformat": "json3",
+            "outtmpl": os.path.join(tmp_dir, "%(id)s.%(ext)s"),
+            "quiet": True,
+            "no_warnings": True,
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+
+        json3_files = [
+            os.path.join(tmp_dir, name)
+            for name in os.listdir(tmp_dir)
+            if name.startswith(video_id) and name.endswith(".json3")
+        ]
+
+        if not json3_files:
+            raise ValueError("No subtitles found via yt-dlp.")
+
+        combined_lines = []
+        for file_path in sorted(json3_files):
+            with open(file_path, "r", encoding="utf-8") as fp:
+                subtitle_json = json.load(fp)
+
+            for event in subtitle_json.get("events", []):
+                segments = event.get("segs", [])
+                line = "".join(seg.get("utf8", "") for seg in segments).strip()
+                if line:
+                    combined_lines.append(line)
+
+        transcript_text = " ".join(combined_lines).strip()
+        if not transcript_text:
+            raise ValueError("yt-dlp subtitles were empty.")
+
+        return transcript_text
 
 
 def build_retriever(transcript: str):
@@ -116,14 +163,28 @@ video_input = st.text_input("YouTube URL or video id", placeholder="https://www.
 if st.button("Load Video", use_container_width=True):
     try:
         video_id = extract_video_id(video_input)
+        transcript_source = "youtube_transcript_api"
         with st.spinner("Fetching transcript and building vector store..."):
-            transcript_text = fetch_transcript_text(video_id)
+            try:
+                transcript_text = fetch_transcript_text(video_id)
+            except Exception as primary_exc:
+                primary_error = str(primary_exc)
+                if (
+                    "YouTube is blocking requests from your IP" in primary_error
+                    or "RequestBlocked" in primary_error
+                    or "IpBlocked" in primary_error
+                ):
+                    transcript_text = fetch_transcript_text_ytdlp(video_id)
+                    transcript_source = "yt-dlp subtitles fallback"
+                else:
+                    raise
+
             retriever, chunk_count = build_retriever(transcript_text)
 
         st.session_state.retriever = retriever
         st.session_state.active_video_id = video_id
         st.session_state.chat_history = []
-        st.success(f"Video loaded. Created {chunk_count} chunks.")
+        st.success(f"Video loaded from {transcript_source}. Created {chunk_count} chunks.")
     except (TranscriptsDisabled, NoTranscriptFound):
         st.error("No Hindi or English transcript found for this video.")
     except Exception as exc:
